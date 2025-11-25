@@ -31,6 +31,56 @@ function DebugBanner({ items = [] }) {
   );
 }
 
+/** --- Loading / Progress Bar --- */
+function LoadingBar({ loading }) {
+  if (!loading) return null;
+  return (
+    <div style={{ margin: "10px 0 16px" }}>
+      <div
+        style={{
+          fontSize: 13,
+          marginBottom: 4,
+          color: "#374151",
+        }}
+      >
+        Checking coverage… this can take a moment if services are waking up.
+      </div>
+      <div className="loading-bar-container">
+        <div className="loading-bar-fill" />
+      </div>
+      <style jsx>{`
+        .loading-bar-container {
+          width: 100%;
+          max-width: 420px;
+          height: 6px;
+          border-radius: 9999px;
+          background: #e5e7eb;
+          overflow: hidden;
+          position: relative;
+        }
+        .loading-bar-fill {
+          position: absolute;
+          top: 0;
+          left: -40%;
+          width: 40%;
+          height: 100%;
+          border-radius: 9999px;
+          background: linear-gradient(90deg, #0284c7, #38bdf8);
+          animation: loadingBarStripes 1.2s linear infinite;
+        }
+        @keyframes loadingBarStripes {
+          0% {
+            transform: translateX(0%);
+          }
+          100% {
+            transform: translateX(260%);
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 /* ---------- PLMN whitelist helpers ---------- */
 
 function detectDelimiter(text) {
@@ -49,8 +99,8 @@ function normalizePlmn(mccmnc) {
 
 export default function Home() {
   const [debug, setDebug] = useState([]);
-  const [plmns, setPlmns] = useState(new Set());   // whitelist of PLMNs
-  const [plmnMeta, setPlmnMeta] = useState({});    // PLMN -> { operatorName, imsiProvider }
+  const [plmns, setPlmns] = useState(new Set()); // whitelist of PLMNs
+  const [plmnMeta, setPlmnMeta] = useState({}); // PLMN -> { operatorName, imsiProvider }
   const [zip, setZip] = useState("");
   const [towers, setTowers] = useState([]); // all OCID towers
   const [filtered, setFiltered] = useState([]); // TG3-compatible towers
@@ -58,6 +108,7 @@ export default function Home() {
   const [fccCounties, setFccCounties] = useState([]);
   const [fccTitle, setFccTitle] = useState("");
   const [fccError, setFccError] = useState(null);
+  const [loading, setLoading] = useState(false); // NEW
 
   const log = useCallback((level, msg) => {
     console[level === "error" ? "error" : level === "warn" ? "warn" : "log"](
@@ -296,7 +347,7 @@ export default function Home() {
     (cells) => {
       const before = cells.length;
       const filtered = cells.filter((t) =>
-        plmns.has(`${t.mcc}${String(t.mnc).padStart(3, "0")}`)
+        plmns.has(`${t.mcc}{String(t.mnc).padStart(3, "0")}`)
       );
       log(
         "info",
@@ -319,37 +370,43 @@ export default function Home() {
     setFccCounties([]);
     setFccTitle("");
     setFccError(null);
+    setLoading(true); // NEW: start loading
 
     if (!zip.trim()) {
       log("warn", "Enter a ZIP code first.");
+      setLoading(false);
       return;
     }
 
     const zipTrimmed = zip.trim();
 
-    // 1) Always call FCC / Render as fallback
-    await fetchFccFromRender(zipTrimmed);
+    try {
+      // 1) Always call FCC / Render as fallback
+      await fetchFccFromRender(zipTrimmed);
 
-    // 2) Try OCID for green result
-    const coords = await geocodeZip(zipTrimmed);
-    if (!coords) return;
+      // 2) Try OCID for green result
+      const coords = await geocodeZip(zipTrimmed);
+      if (!coords) return;
 
-    const towersAll = await fetchOpenCellId(coords.lat, coords.lon);
-    setTowers(towersAll);
+      const towersAll = await fetchOpenCellId(coords.lat, coords.lon);
+      setTowers(towersAll);
 
-    const filteredTowers = filterCellsByPlmn(towersAll);
-    setFiltered(filteredTowers);
+      const filteredTowers = filterCellsByPlmn(towersAll);
+      setFiltered(filteredTowers);
 
-    if (filteredTowers.length) {
-      log(
-        "info",
-        `✅ GREEN: Found ${filteredTowers.length} TG3-compatible towers near ${zipTrimmed}.`
-      );
-    } else {
-      log(
-        "warn",
-        `❌ No TG3-compatible towers found in OCID near ${zipTrimmed}. Using FCC providers as fallback.`
-      );
+      if (filteredTowers.length) {
+        log(
+          "info",
+          `✅ GREEN: Found ${filteredTowers.length} TG3-compatible towers near ${zipTrimmed}.`
+        );
+      } else {
+        log(
+          "warn",
+          `❌ No TG3-compatible towers found in OCID near ${zipTrimmed}. Using FCC providers as fallback.`
+        );
+      }
+    } finally {
+      setLoading(false); // NEW: always stop loading
     }
   };
 
@@ -358,6 +415,7 @@ export default function Home() {
   return (
     <main style={{ padding: 20, fontFamily: "sans-serif" }}>
       <DebugBanner items={debug} />
+      <LoadingBar loading={loading} />
 
       <h1 style={{ fontSize: 28, margin: "12px 0 16px" }}>
         TG3 LTE cellular coverage checker (Coverage via FloLive)
@@ -384,9 +442,11 @@ export default function Home() {
             borderRadius: 6,
             padding: "8px 14px",
             cursor: "pointer",
+            opacity: loading ? 0.8 : 1,
           }}
+          disabled={loading}
         >
-          Check
+          {loading ? "Checking…" : "Check"}
         </button>
       </div>
 
