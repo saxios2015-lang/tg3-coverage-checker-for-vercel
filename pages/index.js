@@ -108,7 +108,7 @@ export default function Home() {
   const [fccCounties, setFccCounties] = useState([]);
   const [fccTitle, setFccTitle] = useState("");
   const [fccError, setFccError] = useState(null);
-  const [loading, setLoading] = useState(false); // NEW
+  const [loading, setLoading] = useState(false);
 
   const log = useCallback((level, msg) => {
     console[level === "error" ? "error" : level === "warn" ? "warn" : "log"](
@@ -347,7 +347,7 @@ export default function Home() {
     (cells) => {
       const before = cells.length;
       const filtered = cells.filter((t) =>
-        plmns.has(`${t.mcc}{String(t.mnc).padStart(3, "0")}`)
+        plmns.has(`${t.mcc}${String(t.mnc).padStart(3, "0")}`)
       );
       log(
         "info",
@@ -370,7 +370,7 @@ export default function Home() {
     setFccCounties([]);
     setFccTitle("");
     setFccError(null);
-    setLoading(true); // NEW: start loading
+    setLoading(true);
 
     if (!zip.trim()) {
       log("warn", "Enter a ZIP code first.");
@@ -406,7 +406,7 @@ export default function Home() {
         );
       }
     } finally {
-      setLoading(false); // NEW: always stop loading
+      setLoading(false);
     }
   };
 
