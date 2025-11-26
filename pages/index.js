@@ -61,7 +61,7 @@ function LoadingBar({ loading }) {
         }
         .loading-bar-fill {
           position: absolute;
-          top: 0;
+          top: 0,
           left: -40%;
           width: 40%;
           height: 100%;
@@ -110,7 +110,7 @@ export default function Home() {
   const [fccTitle, setFccTitle] = useState("");
   const [fccError, setFccError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [geocodeError, setGeocodeError] = useState(null); // <-- NEW
+  const [geocodeError, setGeocodeError] = useState(null); // <-- detailed geocode error
 
   const log = useCallback((level, msg) => {
     console[level === "error" ? "error" : level === "warn" ? "warn" : "log"](
@@ -209,9 +209,15 @@ export default function Home() {
     } catch (e) {
       const msg = e?.message || "unknown error";
       log("error", `Geocode failed: ${msg}`);
+
+      // More detailed explanation for agents
       setGeocodeError(
-        `Geocoding failed for this ZIP (${msg}). Coverage could not be determined.`
+        `Geocoding failed for this ZIP using Nominatim (OpenStreetMap). ` +
+          `Reason: ${msg}. This usually means the shared geocoding service is rate-limited, unreachable, ` +
+          `or returned no result for this ZIP. As a result, we could not look up nearby towers and ` +
+          `coverage could not be determined from OCID.`
       );
+
       return null;
     }
   };
@@ -376,7 +382,7 @@ export default function Home() {
     setFccCounties([]);
     setFccTitle("");
     setFccError(null);
-    setGeocodeError(null); // <-- reset geocode error
+    setGeocodeError(null);
     setLoading(true);
 
     if (!zip.trim()) {
