@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 
 /** --- Debug Banner --- */
 function DebugBanner({ items = [] }) {
@@ -155,7 +156,7 @@ export default function Home() {
         // Operator is at index 5 if the row is well-formed.
         let operatorName = "";
         if (cols.length >= 6) {
-          operatorName = cols[5]; // "One Albania", "AT&T", etc.
+          operatorName = cols[5];
         }
 
         if (!meta[plmn]) {
@@ -323,9 +324,8 @@ export default function Home() {
         );
         setFccTitle(
           data.title ||
-            "We checked FCC data to find providers that are in your area. " +
-              "Listed below are providers we found but that are not in TG3 coverage at this time. " +
-              "Note: Some providers listed may be the roaming partner for the primary provider in your area."
+            "We also checked FCC data to find providers and towers that are in your area. " +
+              "Listed below are a list of the providers that are likely in your area. Note: Some providers listed may be the roaming partner for the primary provider in your area. For example, GCI is the main provider in Bethel, Alaska but allows roaming on AT&T - this config would not work with TG3 as the SIM would be rejected when connecting to GCI."
         );
 
         log(
@@ -417,9 +417,34 @@ export default function Home() {
       <DebugBanner items={debug} />
       <LoadingBar loading={loading} />
 
-      <h1 style={{ fontSize: 28, margin: "12px 0 16px" }}>
-        TG3 LTE cellular coverage checker (Coverage via FloLive)
-      </h1>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        <h1 style={{ fontSize: 28, margin: "12px 0 16px" }}>
+          TG3 LTE cellular coverage checker (Coverage via FloLive)
+        </h1>
+        <Link href="/how-it-works">
+          <button
+            style={{
+              background: "#111827",
+              color: "#fff",
+              border: "none",
+              borderRadius: 6,
+              padding: "8px 12px",
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            How this works
+          </button>
+        </Link>
+      </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
         <input
@@ -547,9 +572,9 @@ export default function Home() {
                   p.label
                 ) : (
                   <>
-                    Provider Name is{" "}
-                    <strong>{p.provider_name ?? "Unknown"}</strong>. Provider ID
-                    is <code>{p.provider_id ?? "N/A"}</code>.
+                    Provider Name:{" "}
+                    <strong>{p.provider_name ?? "Unknown"}</strong>, Provider ID:{" "}
+                    <code>{p.provider_id ?? "N/A"}</code>
                   </>
                 )}
               </li>
