@@ -110,6 +110,7 @@ export default function Home() {
   const [fccTitle, setFccTitle] = useState("");
   const [fccError, setFccError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [geocodeError, setGeocodeError] = useState(null); // <-- NEW
 
   const log = useCallback((level, msg) => {
     console[level === "error" ? "error" : level === "warn" ? "warn" : "log"](
@@ -193,6 +194,7 @@ export default function Home() {
   /* ---------- Geocoding (Nominatim) ---------- */
   const geocodeZip = async (zipCode) => {
     try {
+      setGeocodeError(null); // clear previous geocode error
       const r = await fetch(
         `https://nominatim.openstreetmap.org/search?postalcode=${zipCode}&country=US&format=json&limit=1`,
         { headers: { "User-Agent": "flo-tg3-checker/1.0 (debug@toast.com)" } }
@@ -205,7 +207,11 @@ export default function Home() {
       log("info", `Geocode ${zipCode} → lat ${lat}, lon ${lon}`);
       return { lat, lon };
     } catch (e) {
-      log("error", `Geocode failed: ${e.message}`);
+      const msg = e?.message || "unknown error";
+      log("error", `Geocode failed: ${msg}`);
+      setGeocodeError(
+        `Geocoding failed for this ZIP (${msg}). Coverage could not be determined.`
+      );
       return null;
     }
   };
@@ -370,6 +376,7 @@ export default function Home() {
     setFccCounties([]);
     setFccTitle("");
     setFccError(null);
+    setGeocodeError(null); // <-- reset geocode error
     setLoading(true);
 
     if (!zip.trim()) {
@@ -482,13 +489,20 @@ export default function Home() {
           <li>
             Does TG3 have coverage in your ZIP?{" "}
             <strong>
-              {zip
-                ? hasCoverage
-                  ? "Yes, TG3 will have coverage from FloLive in your area. ✅"
-                  : "No, TG3 will likely not have coverage from FloLive in your area. ❌"
-                : "Run a check above to find out."}
+              {!zip
+                ? "Run a check above to find out."
+                : geocodeError
+                ? "We could not determine coverage because geocoding failed for this ZIP."
+                : hasCoverage
+                ? "Yes, TG3 will have coverage from FloLive in your area. ✅"
+                : "No, TG3 will likely not have coverage from FloLive in your area. ❌"}
             </strong>
           </li>
+          {geocodeError && (
+            <li style={{ color: "#b91c1c", marginTop: 4, fontSize: 13 }}>
+              {geocodeError}
+            </li>
+          )}
           <li>
             From OCID data, number of TG3-compatible towers in your area:{" "}
             <strong>{filtered.length}</strong>
