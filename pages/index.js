@@ -61,7 +61,7 @@ function LoadingBar({ loading }) {
         }
         .loading-bar-fill {
           position: absolute;
-          top: 0,
+          top: 0;
           left: -40%;
           width: 40%;
           height: 100%;
@@ -98,6 +98,16 @@ function normalizePlmn(mccmnc) {
   return mcc + mnc.padStart(3, "0");
 }
 
+/* ---------- ZIP helpers (local DB) ---------- */
+
+function normalizeZipInput(zipInput) {
+  const digitsOnly = (zipInput || "").replace(/\D/g, "");
+  if (!digitsOnly) return null;
+  if (digitsOnly.length < 5) return null;
+  const zip5 = digitsOnly.slice(0, 5);
+  return zip5.padStart(5, "0");
+}
+
 export default function Home() {
   const [debug, setDebug] = useState([]);
   const [plmns, setPlmns] = useState(new Set()); // whitelist of PLMNs
@@ -110,7 +120,8 @@ export default function Home() {
   const [fccTitle, setFccTitle] = useState("");
   const [fccError, setFccError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [geocodeError, setGeocodeError] = useState(null); // <-- detailed geocode error
+  const [geocodeError, setGeocodeError] = useState(null); // detailed geocode error
+  const [zipDb, setZipDb] = useState(null); // ZIP -> { lat, lon }
 
   const log = useCallback((level, msg) => {
     console[level === "error" ? "error" : level === "warn" ? "warn" : "log"](
@@ -123,6 +134,7 @@ export default function Home() {
   /* ---------- Load PLMN whitelist from IMSI_data_tg3.csv ---------- */
   const loadPLMNs = useCallback(async () => {
     try {
+      log("info", "Starting PLMN whitelist load from /data/IMSI_data_tg3.csv…");
       const res = await fetch("/data/IMSI_data_tg3.csv", { cache: "no-store" });
       if (!res.ok) {
         log(
@@ -187,39 +199,90 @@ export default function Home() {
     }
   }, [log]);
 
+  /* ---------- Load ZIP → lat/lon DB from public/data ---------- */
+  const loadZipDb = useCallback(async () => {
+    try {
+      log("info", "Starting ZIP DB load from /data/zip_latlon.json…");
+      const res = await fetch("/data/zip_latlon.json", { cache: "force-cache" });
+      if (!res.ok) {
+        log(
+          "error",
+          `Failed to fetch /data/zip_latlon.json: ${res.status} ${res.statusText}`
+        );
+        return;
+      }
+      const data = await res.json();
+      setZipDb(data);
+      const count = Object.keys(data).length;
+      const sampleKey = Object.keys(data)[0];
+      if (sampleKey) {
+        log(
+          "info",
+          `Loaded ZIP DB with ${count} entries. Example ZIP: ${sampleKey}`
+        );
+      } else {
+        log("warn", "ZIP DB loaded but appears to be empty.");
+      }
+    } catch (e) {
+      log("error", `Failed to load ZIP DB: ${e?.message || e}`);
+    }
+  }, [log]);
+
   useEffect(() => {
     loadPLMNs();
-  }, [loadPLMNs]);
+    loadZipDb();
+  }, [loadPLMNs, loadZipDb]);
 
-  /* ---------- Geocoding (Nominatim) ---------- */
+  /* ---------- Geocoding (Local ZIP → lat/lon DB) ---------- */
   const geocodeZip = async (zipCode) => {
-    try {
-      setGeocodeError(null); // clear previous geocode error
-      const r = await fetch(
-        `https://nominatim.openstreetmap.org/search?postalcode=${zipCode}&country=US&format=json&limit=1`,
-        { headers: { "User-Agent": "flo-tg3-checker/1.0 (debug@toast.com)" } }
-      );
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = await r.json();
-      if (!j.length) throw new Error("no result");
-      const lat = Number(j[0].lat);
-      const lon = Number(j[0].lon);
-      log("info", `Geocode ${zipCode} → lat ${lat}, lon ${lon}`);
-      return { lat, lon };
-    } catch (e) {
-      const msg = e?.message || "unknown error";
-      log("error", `Geocode failed: ${msg}`);
+    setGeocodeError(null); // clear previous geocode error
 
-      // More detailed explanation for agents
-      setGeocodeError(
-        `Geocoding failed for this ZIP using Nominatim (OpenStreetMap). ` +
-          `Reason: ${msg}. This usually means the shared geocoding service is rate-limited, unreachable, ` +
-          `or returned no result for this ZIP. As a result, we could not look up nearby towers and ` +
-          `coverage could not be determined from OCID.`
-      );
+    log("info", `Geocode request for ZIP input: "${zipCode}"`);
 
+    if (!zipDb) {
+      const msg =
+        "ZIP database is still loading. Please wait a moment and try again.";
+      log("warn", msg);
+      setGeocodeError(msg);
       return null;
     }
+
+    const normalized = normalizeZipInput(zipCode);
+    if (!normalized) {
+      const msg = `Invalid ZIP code: "${zipCode}". Please enter a 5-digit US ZIP.`;
+      log("warn", msg);
+      setGeocodeError(
+        msg +
+          " We use an internal ZIP-to-coordinate database based on Census ZCTA data."
+      );
+      return null;
+    }
+
+    const entry = zipDb[normalized];
+    if (!entry) {
+      const msg = `ZIP ${normalized} was not found in the Census ZIP tabulation area dataset.`;
+      log("warn", msg);
+      setGeocodeError(
+        msg +
+          " This usually means the ZIP is not a standard ZCTA in the Census data."
+      );
+      return null;
+    }
+
+    const lat = Number(entry.lat);
+    const lon = Number(entry.lon);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      const msg = `Invalid coordinates for ZIP ${normalized} in local DB.`;
+      log("error", msg);
+      setGeocodeError(
+        msg + " Please verify the ZIP dataset if you continue to see this."
+      );
+      return null;
+    }
+
+    log("info", `Geocode (local) ${normalized} → lat ${lat}, lon ${lon}`);
+    return { lat, lon };
   };
 
   /* ---------- OCID via local proxy (/api/ocid) ---------- */
@@ -257,7 +320,10 @@ export default function Home() {
         try {
           data = JSON.parse(text);
         } catch {
-          log("error", `Proxy returned non-JSON. Body: ${text.slice(0, 200)}…`);
+          log(
+            "error",
+            `Proxy returned non-JSON. Body: ${text.slice(0, 200)}…`
+          );
           return [];
         }
 
@@ -385,8 +451,22 @@ export default function Home() {
     setGeocodeError(null);
     setLoading(true);
 
+    log("info", "Starting coverage check…");
+
     if (!zip.trim()) {
       log("warn", "Enter a ZIP code first.");
+      setLoading(false);
+      return;
+    }
+
+    if (!zipDb) {
+      log(
+        "warn",
+        "ZIP database is not loaded yet. Please wait a moment and try again."
+      );
+      setGeocodeError(
+        "ZIP database is still loading. Please wait a moment and try again."
+      );
       setLoading(false);
       return;
     }
@@ -399,7 +479,13 @@ export default function Home() {
 
       // 2) Try OCID for green result
       const coords = await geocodeZip(zipTrimmed);
-      if (!coords) return;
+      if (!coords) {
+        log(
+          "warn",
+          "Stopping coverage check because geocoding did not return coordinates."
+        );
+        return;
+      }
 
       const towersAll = await fetchOpenCellId(coords.lat, coords.lon);
       setTowers(towersAll);
@@ -420,6 +506,7 @@ export default function Home() {
       }
     } finally {
       setLoading(false);
+      log("info", "Coverage check complete.");
     }
   };
 
@@ -498,7 +585,7 @@ export default function Home() {
               {!zip
                 ? "Run a check above to find out."
                 : geocodeError
-                ? "We could not determine coverage because geocoding failed for this ZIP."
+                ? "We could not determine coverage because we couldn't geocode this ZIP from our database."
                 : hasCoverage
                 ? "Yes, TG3 will have coverage from FloLive in your area. ✅"
                 : "No, TG3 will likely not have coverage from FloLive in your area. ❌"}
