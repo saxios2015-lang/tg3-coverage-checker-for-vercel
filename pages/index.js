@@ -289,13 +289,19 @@ export default function Home() {
   const fetchOpenCellId = useCallback(
     async (lat, lon) => {
       try {
+        // ~4 km radius in degrees
+        const RADIUS = 0.036;
+
         const latN = Number(lat);
         const lonN = Number(lon);
-        const minLon = lonN - 0.01;
-        const minLat = latN - 0.01;
-        const maxLon = lonN + 0.01;
-        const maxLat = latN + 0.01;
+
+        const minLon = lonN - RADIUS;
+        const minLat = latN - RADIUS;
+        const maxLon = lonN + RADIUS;
+        const maxLat = latN + RADIUS;
+
         const bbox = `${minLon},${minLat},${maxLon},${maxLat}`;
+
 
         const url = `/api/ocid?bbox=${encodeURIComponent(
           bbox
